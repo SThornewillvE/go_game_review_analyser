@@ -1,0 +1,128 @@
+import json
+import glob
+import pandas as pd
+
+from openai import OpenAI
+from tqdm import tqdm, trange
+
+def get_gpt_response(client: OpenAI, messages: list[dict]) -> dict:
+    """
+    Send messages to the GPT API and parse the JSON response.
+
+    Args:
+        client: An initialised OpenAI client.
+        messages: A list of message dicts with 'role' and 'content' keys.
+
+    Returns:
+        Parsed JSON response from the model as a dict.
+    """
+    response = client.responses.create(
+        model="gpt-5-nano",
+        input=messages
+    )
+
+    output = json.loads(response.output_text.replace("\n", ""))
+
+    return output
+
+
+def parse_game_reviews(game_path: str = "./game_review_notes/*") -> tuple[dict, pd.DataFrame]:
+    """
+    Parse game review markdown files into a dict and a DataFrame.
+
+    Args:
+        game_path: Glob pattern pointing to the review markdown files.
+
+    Returns:
+        A tuple of:
+        - review_data: dict mapping integer game IDs to dicts containing
+          'metadata' (dict) and 'review_notes' (str).
+        - review_df: DataFrame with one row per game, metadata columns, and a
+          'review_notes' column.
+    """
+    # Get game reviews
+    review_data = dict()
+    game_id = 0
+    review_files = glob.glob(game_path)
+    
+    for file_path in tqdm(review_files):
+    
+        # Load review
+        with open(file_path, "r") as f:
+            review_text = f.read()
+    
+        # Break apart review
+        text_metadata = review_text.split("\n___")[0]
+        review_notes = review_text.split("\n___")[1]
+    
+        # Parse metadata
+        keys = [i.split("`")[0].strip().lower().replace(" ", "_").replace("'", "")[:-1] for i in text_metadata.split("\n")]
+        values = [i.split("`")[1:2][0] for i in text_metadata.split("\n")]
+        metadata = {i: j for i, j in zip(keys, values)}
+
+        # Package everything together
+        review_data[game_id] = {
+            'metadata': metadata,
+            'review_notes': review_notes
+        }
+    
+        game_id+=1
+
+    # Create dataframe for return
+    review_df = pd.DataFrame([review_data[i]["metadata"] for i in review_data])\
+        .assign(review_notes=[review_data[i]["review_notes"] for i in review_data])
+
+    return review_data, review_df
+
+
+def summarise_game_reviews(game_review_data: dict, client: OpenAI, prompts: dict) -> dict:
+    """
+    Generate GPT summaries for each game review.
+
+    Args:
+        game_review_data: Dict mapping integer game IDs to review data, as
+            returned by parse_game_reviews.
+        client: An initialised OpenAI client.
+        prompts: Dict of prompt strings; must contain the key
+            'go_review_system_prompt'.
+
+    Returns:
+        Dict mapping integer game IDs to the parsed JSON summary returned by
+        the model.
+    """
+    game_summaries = dict()
+    
+    for i in trange(len(game_review_data)):
+        messages = [
+            {
+                "role": "system",
+                "content": prompts["go_review_system_prompt"]
+            },
+            {
+                "role": "user",
+                "content": f"""Analyse these game notes as outlined in the system message:\n
+                \
+                Game Notes: {game_review_data[i]}
+                """
+            }
+        ]
+    
+        game_summary = get_gpt_response(client, messages)  # TODO: Verify output
+        game_summaries[i] = game_summary
+
+    return game_summaries
+
+def analyse_game_review_summary(game_review_data: dict, client: OpenAI, prompts: dict) -> dict:
+        
+    messages = [
+        {"role": "system", 
+        "content": prompts["go_review_summary_analyser"]},
+        {"role": "user", 
+        "content": f"""Here is the JSON of game review summaries: \n
+            {game_review_data.drop(columns=["review_notes", "game_link"]).to_json(orient="records", indent=2)}"""
+        }
+    ]
+
+    analysis = get_gpt_response(client, messages)
+
+    return analysis

@@ -6,6 +6,39 @@ import pandas as pd
 from openai import OpenAI
 from tqdm import tqdm, trange
 
+def initialise_db(db_path: str = "game_reviews.db") -> None:
+    """
+    Create the database and required tables if they don't already exist.
+
+    Args:
+        db_path: Path to the SQLite database file.
+    """
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS reviews (
+                date TEXT,
+                opponents_name TEXT,
+                server TEXT,
+                game_link TEXT,
+                result TEXT,
+                played_as TEXT,
+                handicap TEXT,
+                time_setting TEXT,
+                review_notes TEXT,
+                key_mistake TEXT,
+                key_mistake_cause TEXT,
+                positive_point TEXT,
+                game_tags TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS tag_counts (
+                tag TEXT,
+                count INTEGER
+            )
+        """)
+
+
 def get_existing_game_links(db_path: str = "game_reviews.db") -> set[str]:
     """
     Return the set of game_link values already stored in the reviews table.

@@ -1,0 +1,14 @@
+name: go-game-review-analyser
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python>=3.9
+  - pip
+  - pip:
+    - pandas
+    - openai
+    - fastapi
+    - pydantic
+    - tqdm
+    - uvicorn

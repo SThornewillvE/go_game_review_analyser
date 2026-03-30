@@ -99,7 +99,7 @@ def parse_game_reviews(game_path: str = "./game_review_notes/*") -> tuple[dict, 
     game_id = 0
     review_files = glob.glob(game_path)
 
-    for file_path in tqdm(review_files):
+    for file_path in tqdm([f for f in review_files if not f.endswith("game_review_template.md")]):
 
         # Load review
         with open(file_path, "r") as f:

@@ -1,9 +1,29 @@
 import json
 import glob
+import sqlite3
 import pandas as pd
 
 from openai import OpenAI
 from tqdm import tqdm, trange
+
+def get_existing_game_links(db_path: str = "game_reviews.db") -> set[str]:
+    """
+    Return the set of game_link values already stored in the reviews table.
+
+    Args:
+        db_path: Path to the SQLite database file.
+
+    Returns:
+        A set of game_link strings, or an empty set if the table doesn't exist.
+    """
+    try:
+        conn = sqlite3.connect(db_path)
+        existing = pd.read_sql("SELECT game_link FROM reviews", conn)["game_link"].tolist()
+        conn.close()
+        return set(existing)
+    except Exception:
+        return set()
+
 
 def get_gpt_response(client: OpenAI, messages: list[dict]) -> dict:
     """
@@ -40,21 +60,22 @@ def parse_game_reviews(game_path: str = "./game_review_notes/*") -> tuple[dict, 
         - review_df: DataFrame with one row per game, metadata columns, and a
           'review_notes' column.
     """
+
     # Get game reviews
     review_data = dict()
     game_id = 0
     review_files = glob.glob(game_path)
-    
+
     for file_path in tqdm(review_files):
-    
+
         # Load review
         with open(file_path, "r") as f:
             review_text = f.read()
-    
+
         # Break apart review
         text_metadata = review_text.split("\n___")[0]
         review_notes = review_text.split("\n___")[1]
-    
+
         # Parse metadata
         keys = [i.split("`")[0].strip().lower().replace(" ", "_").replace("'", "")[:-1] for i in text_metadata.split("\n")]
         values = [i.split("`")[1:2][0] for i in text_metadata.split("\n")]
@@ -65,7 +86,7 @@ def parse_game_reviews(game_path: str = "./game_review_notes/*") -> tuple[dict, 
             'metadata': metadata,
             'review_notes': review_notes
         }
-    
+
         game_id+=1
 
     # Create dataframe for return
@@ -75,7 +96,7 @@ def parse_game_reviews(game_path: str = "./game_review_notes/*") -> tuple[dict, 
     return review_data, review_df
 
 
-def summarise_game_reviews(game_review_data: dict, client: OpenAI, prompts: dict) -> dict:
+def summarise_game_reviews(game_review_data: dict, client: OpenAI, prompts: dict, db_path: str = "game_reviews.db") -> dict:
     """
     Generate GPT summaries for each game review.
 
@@ -85,14 +106,21 @@ def summarise_game_reviews(game_review_data: dict, client: OpenAI, prompts: dict
         client: An initialised OpenAI client.
         prompts: Dict of prompt strings; must contain the key
             'go_review_system_prompt'.
+        db_path: Path to the SQLite database file, used to skip games already
+            stored in the reviews table.
 
     Returns:
         Dict mapping integer game IDs to the parsed JSON summary returned by
-        the model.
+        the model. Only contains entries for games not already in the database.
     """
+    existing_game_links = get_existing_game_links(db_path)
+
     game_summaries = dict()
-    
+
     for i in trange(len(game_review_data)):
+        if game_review_data[i].get('metadata', {}).get('game_link') in existing_game_links:
+            continue
+
         messages = [
             {
                 "role": "system",
@@ -106,7 +134,7 @@ def summarise_game_reviews(game_review_data: dict, client: OpenAI, prompts: dict
                 """
             }
         ]
-    
+
         game_summary = get_gpt_response(client, messages)  # TODO: Verify output
         game_summaries[i] = game_summary
 

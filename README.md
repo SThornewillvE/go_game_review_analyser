@@ -16,13 +16,15 @@ After reviewing Go games (with an AI or teacher), notes are written in structure
 ## Structure
 
 ```
-prototype/                  # Exploratory notebooks and scripts
+prototype/                  # Jupyter notebooks for offline analysis and experimentation
   game_review_notes/        # Markdown game review files
-src/
+src/                        # Production application
   main.py                   # FastAPI app exposing /games/summarise and /games/analyse
   helpers.py                # Core logic: parsing, LLM calls, DB operations
   prompt_configs.json       # LLM system prompts
 ```
+
+Use the `prototype/` notebooks to analyse your data offline without running a server. The files in `src/` are intended for production use, exposing the analysis as an API.
 
 ## API endpoints
 

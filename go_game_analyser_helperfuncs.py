@@ -140,6 +140,35 @@ def summarise_game_reviews(game_review_data: dict, client: OpenAI, prompts: dict
 
     return game_summaries
 
+def analyse_tags(game_review_df: pd.DataFrame, db_path: str = "game_reviews.db") -> pd.DataFrame:
+    """
+    Count game tags across all reviews and persist them to the database.
+
+    Args:
+        game_review_df: DataFrame with a 'game_tags' column containing
+            semicolon-separated tag strings.
+        db_path: Path to the SQLite database file.
+
+    Returns:
+        DataFrame with columns ['tag', 'count'] sorted by frequency descending.
+    """
+    tag_counts = (
+        game_review_df["game_tags"]
+        .str.split(";")
+        .explode()
+        .str.strip()
+        .value_counts()
+        .to_dict()
+    )
+
+    df_tag_counts = pd.DataFrame(list(tag_counts.items()), columns=["tag", "count"])
+
+    with sqlite3.connect(db_path) as conn:
+        df_tag_counts.to_sql("tag_counts", conn, if_exists="replace", index=False)
+
+    return df_tag_counts
+
+
 def analyse_game_review_summary(game_review_data: dict, client: OpenAI, prompts: dict) -> dict:
         
     messages = [

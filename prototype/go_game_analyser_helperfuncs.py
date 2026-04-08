@@ -22,6 +22,7 @@ def initialise_db(db_path: str = "game_reviews.db") -> None:
                 game_link TEXT,
                 result TEXT,
                 played_as TEXT,
+                is_won_game INTEGER,
                 handicap TEXT,
                 time_setting TEXT,
                 review_notes TEXT,
@@ -200,6 +201,119 @@ def analyse_tags(game_review_df: pd.DataFrame, db_path: str = "game_reviews.db")
         df_tag_counts.to_sql("tag_counts", conn, if_exists="replace", index=False)
 
     return df_tag_counts
+
+
+def analyse_review_notes(game_review_df: pd.DataFrame, client: OpenAI, prompts: dict) -> dict:
+    combined_notes = "\n\n---\n\n".join(game_review_df["review_notes"].dropna().tolist())
+
+    messages = [
+        {"role": "system",
+         "content": prompts["go_review_notes_analyser"]},
+        {"role": "user",
+         "content": f"Here are the combined raw review notes from all games:\n\n{combined_notes}"}
+    ]
+
+    return get_gpt_response(client, messages)
+
+
+def analyse_playing_style(
+    game_review_df: pd.DataFrame,
+    client: OpenAI,
+    prompts: dict,
+    n_runs: int = 4,
+    context: dict | None = None,
+) -> dict:
+    eligible_df = game_review_df[pd.to_numeric(game_review_df["handicap"], errors="coerce").fillna(0) <= 1]
+    combined_notes = "\n\n---\n\n".join(eligible_df["review_notes"].dropna().tolist())
+
+    total = len(eligible_df)
+    wins = int(eligible_df["is_won_game"].sum())
+    win_rate_summary = f"Win/loss record: {wins} wins, {total - wins} losses out of {total} games ({wins / total:.0%} win rate)."
+
+    context_section = ""
+    if context:
+        if "summary" in context:
+            context_section += f"\n\nGame review summary:\n{json.dumps(context['summary'], indent=2)}"
+        if "notes_analysis" in context:
+            context_section += f"\n\nRecurring pattern analysis:\n{json.dumps(context['notes_analysis'], indent=2)}"
+
+    user_content = (
+        f"{win_rate_summary}"
+        f"{context_section}"
+        f"\n\nCombined raw review notes from all games:\n\n{combined_notes}"
+    )
+
+    messages = [
+        {"role": "system", "content": prompts["go_playing_style_analyser"]},
+        {"role": "user", "content": user_content},
+    ]
+
+    all_runs = [
+        get_gpt_response(client, messages)
+        for _ in trange(n_runs, desc="Analysing playing style")
+    ]
+
+    scores_by_dimension: dict[str, list[int]] = {}
+    reasoning_by_dimension: dict[str, list[str]] = {}
+    for run in all_runs:
+        for dim, value in run.items():
+            scores_by_dimension.setdefault(dim, []).append(value["score"])
+            reasoning_by_dimension.setdefault(dim, []).append(value["reasoning"])
+
+    scores_df = pd.DataFrame([
+        {"dimension": dim, "score": round(sum(scores) / len(scores), 1)}
+        for dim, scores in scores_by_dimension.items()
+    ])
+
+    # Use the reasoning from the median-score run to surface the most representative justification
+    dimensions_detail = {}
+    for dim, scores in scores_by_dimension.items():
+        avg = sum(scores) / len(scores)
+        closest_idx = min(range(len(scores)), key=lambda i: abs(scores[i] - avg))
+        dimensions_detail[dim] = {
+            "score": round(avg, 1),
+            "reasoning": reasoning_by_dimension[dim][closest_idx],
+        }
+
+    return {"scores": scores_df, "dimensions": dimensions_detail}
+
+
+def save_analysis(
+    game_review_df: pd.DataFrame,
+    summary: dict,
+    notes_analysis: dict,
+    db_path: str = "game_reviews.db",
+) -> None:
+    """
+    Persist a period's analysis results to the game_analyses table.
+
+    Args:
+        game_review_df: DataFrame with a 'date' column used to derive the
+            period start and end dates.
+        summary: Output of analyse_game_review_summary.
+        notes_analysis: Output of analyse_review_notes.
+        db_path: Path to the SQLite database file.
+    """
+    period_start = pd.to_datetime(game_review_df["date"]).min().date().isoformat()
+    period_end = pd.to_datetime(game_review_df["date"]).max().date().isoformat()
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS game_analyses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                period_start TEXT,
+                period_end TEXT,
+                summary TEXT,
+                notes_analysis TEXT,
+                created_at TEXT DEFAULT (datetime('now'))
+            )
+        """)
+        conn.execute(
+            "INSERT INTO game_analyses (period_start, period_end, summary, notes_analysis) VALUES (?, ?, ?, ?)",
+            (period_start, period_end, json.dumps(summary), json.dumps(notes_analysis)),
+        )
+
+    print(f"Saved analysis for period {period_start} → {period_end}")
 
 
 def analyse_game_review_summary(game_review_data: dict, client: OpenAI, prompts: dict) -> dict:

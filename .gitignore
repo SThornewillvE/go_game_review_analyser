@@ -3,3 +3,4 @@ game_reviews.db
 .ipynb_checkpoints/
 __pycache__/
 /prototype/game_review_notes/2026*
+uv.lock

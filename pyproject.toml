@@ -5,9 +5,9 @@ description = "Parses Go game review notes and uses Claude to extract structured
 requires-python = ">=3.11"
 dependencies = [
     "anthropic>=0.95.0",
+    "bcrypt>=5.0.0",
     "fastapi>=0.135.3",
     "pandas>=3.0.2",
-    "passlib[bcrypt]>=1.7.4",
     "python-jose[cryptography]>=3.5.0",
     "python-multipart>=0.0.26",
     "streamlit>=1.56.0",

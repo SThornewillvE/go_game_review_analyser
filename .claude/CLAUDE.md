@@ -32,10 +32,10 @@ src/                              # Production pipeline
 5. Write results to the `reviews` table in `game_reviews.db`
 
 ### Stage 2 — Analyse
-1. Read all reviews added since the most recent analysis (i.e. `reviews.created_at` > last `game_analyses.created_at`); refuse to run if fewer than 20 such games exist
+1. Read all reviews added since the most recent analysis (i.e. `reviews.created_at` > last `game_analyses.created_at`); refuse to run if fewer than 20 such new games exist
 2. Run two analysis functions against the Claude API:
    - `analyse_review_notes` — recurring patterns, habits, and overall impression (uses all batch games)
-   - `analyse_playing_style` — qualitative assessment across 7 skill dimensions (excludes games with handicap > 1, as handicap games force a style that isn't representative)
+   - `analyse_playing_style` — qualitative assessment across 7 skill dimensions (excludes games with handicap > 1, as handicap games force a style that isn't representative of the player's typical style.)
 3. Count game tags for the current batch (`analyse_tags`) — computed in-memory from `reviews`
 4. Compute win rate for the batch (all games including handicap); store `win_count` and `game_count`
 5. Persist the analysis to the `game_analyses` table (`save_analysis`)
@@ -208,15 +208,21 @@ The seven dimensions used to assess a player's tendencies and skill level. Each 
 
 | Dimension | Definition |
 |---|---|
-| **Knowledge** | Understanding of theory: joseki, fuseki, fundamental life-and-death, common shapes. Assessed on cases where the player faces a joseki and makes active mistakes within it — not merely uncertainty about direction. Moves described as "typical" or "normal" are a positive signal. Endgame play is not a strong signal for this dimension. |
-| **Reading** | Primarily mid-game fighting ability: visualising sequences, searching branches, avoiding misreads in tactical encounters. Correctly reading endgame sequences (as distinct from simply counting) is also a positive signal. |
-| **Territorial Intuition** | Accurate understanding of who is ahead in the game. |
-| **Technical Intuition** | Sense for shape strength and weakness; knowing how to combine weaknesses for disproportionate results. |
-| **Strategy** | Ability to choose goals and directions within the game that lead to good results. |
-| **Game Experience** | Knowing when to deviate from theory; composure in unfamiliar positions. Only in-game behaviour counts — post-game review remarks are excluded. Weak signals include late-game blunders that immediately lose the game, and positions that appear favourable but go badly due to misplaying during a fight. |
-| **Mind Control** | Awareness of bad habits; ability to concentrate throughout a long or hard game and avoid careless play. |
+| **Knowledge** | Understanding of theory: joseki, fuseki, fundamental life-and-death, common shapes. Assessed on cases where the player faces a joseki and makes active mistakes within it — not merely uncertainty about direction. Moves described as "typical" or "normal" are a positive signal. General endgame play is not a strong signal, but knowing the point values of endgame moves is — it reflects genuine theoretical understanding. |
+| **Reading** | Mid-game fighting ability: visualising sequences, searching branches, avoiding misreads in tactical encounters. A strong positive requires both outcome *and* evidence of process — the player explicitly anticipating moves before they appear, or winning a fight in a systematic, step-by-step way. Winning a fight without commentary on the reading process is a weak signal. Reading endgame sequences (as distinct from merely counting) is also a positive signal. |
+| **Territorial Intuition** | Accurate *evaluation* of the position: who is ahead, and where the biggest points are at each stage once urgent positions have resolved. Strong positive: correctly counting and acting on it; identifying the right priorities after a sequence settles. Strong negative: misjudging the score; consistently missing the biggest remaining points; resigning when the game is still even or when the resigning player is actually ahead (though this can also reflect poor Mind Control — the player should count before resigning). |
+| **Technical Intuition** | Recognising where thin shape or combinable weaknesses exist — noticing the opportunity *before* reading it out. Strong positive: identifying "troubles" in the position; seeing that a combination could exist and then pursuing it. Strong negative: missing thin shapes; digging hard in reading when nothing is there (misidentifying where the trouble is). |
+| **Strategy** | Acting on board evaluation in a coherent plan; choosing goals and directions that lead to good results. Strong positive: achieving goals indirectly; recognising what's not working and adapting; sacrificing dead stones, group tails, or single stones to improve the overall position. Strong negative: choosing goals that cost points; relying on the opponent making mistakes. Distinguish from Territorial Intuition (the *evaluation* itself) and Mind Control (the *presence* to form any plan at all — if the player played reactively with no plan, that is Mind Control; if they had a plan but chose poorly, that is Strategy). |
+| **Game Experience** | Practical wisdom; knowing when to deviate from theory and finding simple moves that handle positions cleanly. Strong positive: correctly deviating from joseki when the surrounding position makes it appropriate; playing simple, effective moves that theory-trained players would miss. Strong negative: playing theory-correct moves but failing to follow up; late-game blunders in a winning position; positions that look favorable but unravel during a fight. The combination of the player's own remarks and what is flagged during AI review is especially diagnostic — gaps between what the player noticed and what the AI flags reveal limits in practical experience. Only in-game behaviour counts; post-game review remarks are excluded. |
+| **Mind Control** | Presence, emotional control, and consistency of focus throughout the game. Strong positive: sitting with uncomfortable positions rather than avoiding them; resisting known bad habits; maintaining a deliberate and intentional pace. Strong negative: playing without clear intention at the start of the game; not resisting bad habits; playing too fast (careless, not sitting with problems); playing too slowly or indecisively; unintentionally taking gote by consistently responding to the opponent rather than pursuing one's own plan. |
 
 Assessments should be grounded in specific evidence from the notes and avoid vague generalisations. The goal is to give the player a clear sense of where they are strong and where they are not, without the false precision of a numeric score.
+
+**On signal source** — The player's own commentary is primary evidence. When the player describes their thought process ("I anticipated this", "I counted and decided to play safely"), that is a strong signal for the relevant dimension. KataGo flags without accompanying player commentary are weaker evidence — especially for dimensions requiring *awareness* (Reading, Mind Control, Game Experience). The most diagnostic cases are where player commentary and KataGo *diverge*: the player felt confident about a sequence KataGo marks as a mistake, or expressed uncertainty about a move KataGo considers optimal.
+
+**Player type classification:**
+- **Calm-type dimensions**: Knowledge, Territorial Intuition, Strategy, Mind Control
+- **Aggressive-type dimensions**: Reading, Technical Intuition, Game Experience
 
 ## Database Notes
 

@@ -1,0 +1,10 @@
+.venv/
+.git/
+.claude/
+prototype/
+*.db
+*.pyc
+__pycache__/
+.DS_Store
+.ipynb_checkpoints/
+*.ipynb

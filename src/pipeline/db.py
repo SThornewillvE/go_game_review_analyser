@@ -1,9 +1,10 @@
 import json
+import os
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
-DB_PATH = Path("game_reviews.db")
+DB_PATH = Path(os.getenv("DB_PATH", "game_reviews.db"))
 
 
 @contextmanager
